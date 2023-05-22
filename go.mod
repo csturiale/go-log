@@ -2,7 +2,7 @@ module github.com/csturiale/go-log
 
 go 1.20
 
-require github.com/smartystreets/goconvey v1.6.2
+require github.com/smartystreets/goconvey v1.8.0
 
 require (
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
