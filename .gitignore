@@ -18,3 +18,4 @@ vendor/
 
 # Environment variable file
 .env
+.idea
