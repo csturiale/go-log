@@ -4,6 +4,7 @@
 package log
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,8 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/withmandala/go-log/colorful"
-	"golang.org/x/crypto/ssh/terminal"
+	"github.com/csturiale/go-log/colorful"
 )
 
 // FdWriter interface extends existing io.Writer with file descriptor function
@@ -22,19 +22,23 @@ type FdWriter interface {
 	io.Writer
 	Fd() uintptr
 }
+type Config struct {
+	Color     bool
+	Out       FdWriter
+	Debug     bool
+	Timestamp bool
+	Quiet     bool
+	Prefix    string
+}
 
 // Logger struct define the underlying storage for single logger
 type Logger struct {
-	mu        sync.RWMutex
-	color     bool
-	out       FdWriter
-	debug     bool
-	timestamp bool
-	quiet     bool
-	buf       colorful.ColorBuffer
+	mu     sync.RWMutex
+	config Config
+	buf    colorful.ColorBuffer
 }
 
-// Prefix struct define plain and color byte
+// Prefix struct define plain and Color byte
 type Prefix struct {
 	Plain []byte
 	Color []byte
@@ -88,15 +92,26 @@ var (
 		Plain: plainTrace,
 		Color: colorful.Cyan(plainTrace),
 	}
+	logger *Logger
 )
 
-// New returns new Logger instance with predefined writer output and
+// Init returns single logger instance with predefined writer output and
 // automatically detect terminal coloring support
-func New(out FdWriter) *Logger {
+func Init(config Config) (*Logger, error) {
+	if config.Out == nil {
+		return nil, errors.New("config.out is a mandatory field")
+	}
+	if logger == nil {
+		logger = newLogger(config)
+	}
+	return logger, nil
+}
+
+// newLogger returns newLogger Logger instance with predefined writer output and
+// automatically detect terminal coloring support
+func newLogger(config Config) *Logger {
 	return &Logger{
-		color:     terminal.IsTerminal(int(out.Fd())),
-		out:       out,
-		timestamp: true,
+		config: config,
 	}
 }
 
@@ -104,7 +119,7 @@ func New(out FdWriter) *Logger {
 func (l *Logger) WithColor() *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.color = true
+	l.config.Color = true
 	return l
 }
 
@@ -112,15 +127,15 @@ func (l *Logger) WithColor() *Logger {
 func (l *Logger) WithoutColor() *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.color = false
+	l.config.Color = false
 	return l
 }
 
-// WithDebug turn on debugging output on the log to reveal debug and trace level
+// WithDebug turn on debugging output on the log to reveal Debug and trace level
 func (l *Logger) WithDebug() *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.debug = true
+	l.config.Debug = true
 	return l
 }
 
@@ -128,7 +143,7 @@ func (l *Logger) WithDebug() *Logger {
 func (l *Logger) WithoutDebug() *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.debug = false
+	l.config.Debug = false
 	return l
 }
 
@@ -136,22 +151,22 @@ func (l *Logger) WithoutDebug() *Logger {
 func (l *Logger) IsDebug() bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return l.debug
+	return l.config.Debug
 }
 
-// WithTimestamp turn on timestamp output on the log
+// WithTimestamp turn on Timestamp output on the log
 func (l *Logger) WithTimestamp() *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.timestamp = true
+	l.config.Timestamp = true
 	return l
 }
 
-// WithoutTimestamp turn off timestamp output on the log
+// WithoutTimestamp turn off Timestamp output on the log
 func (l *Logger) WithoutTimestamp() *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.timestamp = false
+	l.config.Timestamp = false
 	return l
 }
 
@@ -159,7 +174,7 @@ func (l *Logger) WithoutTimestamp() *Logger {
 func (l *Logger) Quiet() *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.quiet = true
+	l.config.Quiet = true
 	return l
 }
 
@@ -167,20 +182,20 @@ func (l *Logger) Quiet() *Logger {
 func (l *Logger) NoQuiet() *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.quiet = false
+	l.config.Quiet = false
 	return l
 }
 
-// IsQuiet check for quiet state
+// IsQuiet check for Quiet state
 func (l *Logger) IsQuiet() bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return l.quiet
+	return l.config.Quiet
 }
 
 // Output print the actual value
 func (l *Logger) Output(depth int, prefix Prefix, data string) error {
-	// Check if quiet is requested, and try to return no error and be quiet
+	// Check if Quiet is requested, and try to return no error and be Quiet
 	if l.IsQuiet() {
 		return nil
 	}
@@ -211,15 +226,18 @@ func (l *Logger) Output(depth int, prefix Prefix, data string) error {
 	// Reset buffer so it start from the begining
 	l.buf.Reset()
 	// Write prefix to the buffer
-	if l.color {
+	if l.config.Color {
+		l.buf.Off()
+		l.buf.Append([]byte("[" + l.config.Prefix + "]"))
 		l.buf.Append(prefix.Color)
 	} else {
+		l.buf.Append([]byte("[" + l.config.Prefix + "]"))
 		l.buf.Append(prefix.Plain)
 	}
 	// Check if the log require timestamping
-	if l.timestamp {
-		// Print timestamp color if color enabled
-		if l.color {
+	if l.config.Timestamp {
+		// Print Timestamp Color if Color enabled
+		if l.config.Color {
 			l.buf.Blue()
 		}
 		// Print date and time
@@ -237,15 +255,15 @@ func (l *Logger) Output(depth int, prefix Prefix, data string) error {
 		l.buf.AppendByte(':')
 		l.buf.AppendInt(sec, 2)
 		l.buf.AppendByte(' ')
-		// Print reset color if color enabled
-		if l.color {
+		// Print reset Color if Color enabled
+		if l.config.Color {
 			l.buf.Off()
 		}
 	}
 	// Add caller filename and line if enabled
 	if prefix.File {
-		// Print color start if enabled
-		if l.color {
+		// Print Color start if enabled
+		if l.config.Color {
 			l.buf.Orange()
 		}
 		// Print filename and line
@@ -255,8 +273,8 @@ func (l *Logger) Output(depth int, prefix Prefix, data string) error {
 		l.buf.AppendByte(':')
 		l.buf.AppendInt(line, 0)
 		l.buf.AppendByte(' ')
-		// Print color stop
-		if l.color {
+		// Print Color stop
+		if l.config.Color {
 			l.buf.Off()
 		}
 	}
@@ -266,7 +284,7 @@ func (l *Logger) Output(depth int, prefix Prefix, data string) error {
 		l.buf.AppendByte('\n')
 	}
 	// Flush buffer to output
-	_, err := l.out.Write(l.buf.Buffer)
+	_, err := l.config.Out.Write(l.buf.Buffer)
 	return err
 }
 
@@ -313,28 +331,28 @@ func (l *Logger) Infof(format string, v ...interface{}) {
 	l.Output(1, InfoPrefix, fmt.Sprintf(format, v...))
 }
 
-// Debug print debug message to output if debug output enabled
+// Debug print Debug message to output if Debug output enabled
 func (l *Logger) Debug(v ...interface{}) {
 	if l.IsDebug() {
 		l.Output(1, DebugPrefix, fmt.Sprintln(v...))
 	}
 }
 
-// Debugf print formatted debug message to output if debug output enabled
+// Debugf print formatted Debug message to output if Debug output enabled
 func (l *Logger) Debugf(format string, v ...interface{}) {
 	if l.IsDebug() {
 		l.Output(1, DebugPrefix, fmt.Sprintf(format, v...))
 	}
 }
 
-// Trace print trace message to output if debug output enabled
+// Trace print trace message to output if Debug output enabled
 func (l *Logger) Trace(v ...interface{}) {
 	if l.IsDebug() {
 		l.Output(1, TracePrefix, fmt.Sprintln(v...))
 	}
 }
 
-// Tracef print formatted trace message to output if debug output enabled
+// Tracef print formatted trace message to output if Debug output enabled
 func (l *Logger) Tracef(format string, v ...interface{}) {
 	if l.IsDebug() {
 		l.Output(1, TracePrefix, fmt.Sprintf(format, v...))

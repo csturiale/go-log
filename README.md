@@ -24,21 +24,27 @@ The log serverity and behavior can be described as follows:
 Add the `go-log` package using
 
 ```
-go get github.com/withmandala/go-log
+go get github.com/csturiale/go-log
 ```
 
 And import it to your package by
 
 ```go
 import (
-    "github.com/withmandala/go-log"
+    "github.com/csturiale/go-log"
 )
 ```
 
 Use the `go-log` package with
 
 ```go
-logger := log.New(os.Stderr)
+logger, _ := log.Init(log.Config{
+    Debug:     true,
+    Prefix:    "MYService",
+    Out:       os.Stdout,
+    Color:     true,
+    Timestamp: true,
+})
 logger.Info("Hi, this is your logger")
 ```
 
@@ -49,7 +55,23 @@ if err != nil {
 	fmt.Println(err)
 	return
 }
-logger := log.New(f)
+logger, _ := log.Init(log.Config{
+    Prefix:    "MYService",
+    Out:       f,
+    Color:     true,
+	//...
+})
+```
+## Logger configuration
+```go
+type Config struct {
+    Color     bool      // Enable or disable colors
+    Out       FdWriter  // output to io.Reader with file descriptors (os.Stdout, os.Stderr, regular file, etc.) 
+    Debug     bool      // Enable or disable debug log
+    Timestamp bool      // If true add Timestamp to each log entry
+    Quiet     bool      // If true will hide all the logs
+    Prefix    string    // Add a prefix to the logs, useful if you want to identify your service
+}
 ```
 ## Color support
 
@@ -58,10 +80,14 @@ support. But, if you insist to use or not to use color, you can add `.WithColor(
 
 ```go
 // With color
-logger := log.New(os.Stderr).WithColor()
+logger, _ := log.Init(log.Config{
+    Out:       os.Stdout,
+}).WithColor()
 
 // Without color
-logger := log.New(os.Stderr).WithoutColor()
+logger, _ := log.Init(log.Config{
+    Out:       os.Stdout,
+}).WithoutColor()
 ```
 
 ## Debug output
@@ -71,7 +97,10 @@ call `(Logger).WithDebug()` or `(Logger).WithoutDebug()` respectively.
 
 ```go
 // Enable debugging
-logger := log.New(os.Stderr).WithDebug()
+logger, _ := log.Init(log.Config{
+    Prefix:    "MYService",
+    Out:       os.Stdout,
+}).WithDebug()
 // Print debug output
 logger.Debug("Test debug output")
 // Disable debug output
